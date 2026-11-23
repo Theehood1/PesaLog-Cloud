@@ -1,34 +1,62 @@
-# PesaLog portal (Stage 1)
+# PesaLog Cloud
 
-A web page where you log in, see failed / unconfirmed / received / pending payments and tap **Retry**.
-The phone does the retry: the page only sends a command, PesaLog on the phone picks it up (Stage 2).
+PesaLog Cloud is the web portal and Supabase backend for PesaLog Android. It preserves the original portal's three-table contract:
 
-## One-time setup
+- `txn_sync` — transaction status with masked phone numbers only.
+- `commands` — queued remote retry requests and phone-side results.
+- `device_state` — last phone heartbeat, app version, airtime and automation state.
 
-1. **Create the database (free).** supabase.com > New project. Pick the region nearest Kenya (London or Frankfurt). Save the database password somewhere safe.
-2. **Create the tables.** Supabase > SQL Editor > New query > paste all of `supabase_setup.sql` > Run.
-3. **Lock the door (important).** Authentication > Sign In / Providers > Email: turn OFF **Allow new users to sign up**. Otherwise anyone could make an account.
-4. **Create your login.** Authentication > Users > Add user > Create new user. Enter your email and a strong password and tick **Auto Confirm User**.
-5. **Copy two values.** Project Settings > API: the **Project URL** and the **anon public** key. Never copy the `service_role` key anywhere.
-6. **Put them in the page.** Open `index.html`, find the block marked `PUT YOUR TWO VALUES HERE` and paste the URL and the anon key between the quotes (Termux: `micro index.html`).
-7. **Publish the page** (GitHub Pages needs a public repo; the page holds no data, only the public anon key):
+## Supabase project
 
-```
-cd ~ && rm -rf pesalog-portal && mkdir pesalog-portal && cd pesalog-portal
-cp ~/storage/downloads/index.html ~/storage/downloads/supabase_setup.sql ~/storage/downloads/README.md .
-git init -q && git branch -M main && git add -A && git commit -qm "PesaLog portal" && gh repo create pesalog-portal --public --source=. --push
-gh api -X POST repos/$(gh api user -q .login)/pesalog-portal/pages -f "source[branch]=main" -f "source[path]=/"
-```
+- Project URL: `https://oatsttwmekgfoxcpjnin.supabase.co`
+- Use the project's **publishable** key (`sb_publishable_...`) in this static portal and in the Android Portal Sync settings.
+- Never put a `service_role` / secret key in this repository, website, or Android app.
 
-The portal is then at `https://YOUR-GITHUB-NAME.github.io/pesalog-portal/` (allow a couple of minutes).
+The current project already has all three tables, RLS enabled, and owner-only policies for the `authenticated` role. Anonymous table privileges have been revoked. The cleanup function can only be executed by `service_role`.
 
-## How it is protected
-- Every table has Row Level Security: a logged-in user can only read and write their own rows. Without logging in the page shows nothing.
-- Sign-ups are off, so only the user you created can log in.
-- The full phone number never leaves the phone: the portal only gets a masked number (0712***678), the name, amount, offer, status and time.
-- The raw SMS, USSD replies and balances (other than airtime) are never uploaded.
+## Supabase Auth
 
-## Stage 2 (the app, next)
-PesaLog gets a "Portal sync" screen (Supabase URL, anon key, your email and password), then every minute in the background it:
-1. uploads the failed / unconfirmed / received / pending payments and its own status (online, version, airtime, automation on or off);
-2. fetches queued Retry commands, checks the inbox for Safaricom's confirmation first (skipping anything already delivered), runs the rest and reports back "retried", "already delivered" or the failure reason.
+1. Keep public sign-ups disabled.
+2. Use the confirmed user created for the owner account.
+3. Enable leaked-password protection in Auth security settings.
+4. Portal and Android must sign in with the same Supabase user so `auth.uid()` matches the row owner.
+
+## Deploy website with GitHub Pages
+
+This repository includes `.github/workflows/pages.yml`. In GitHub:
+
+1. Open **Theehood1/PesaLog-Cloud → Settings → Pages**.
+2. Set **Source** to **GitHub Actions**.
+3. Push to `main`; the workflow publishes `index.html`.
+
+Expected site address: `https://theehood1.github.io/PesaLog-Cloud/`.
+
+## Connect Android
+
+In PesaLog Android open **Settings → Portal sync** and enter:
+
+- Project URL: `https://oatsttwmekgfoxcpjnin.supabase.co`
+- Project publishable key: copy the active `sb_publishable_...` key from Supabase Project Settings → API Keys.
+- Sign in with the same confirmed portal account.
+
+Tap **Sync now**. Keep PesaLog's foreground service enabled for regular heartbeat and remote command polling. The Android app performs the Safaricom inbox verification on-device before a remote retry; the website never runs USSD itself.
+
+## Data and safety
+
+- Full customer phone numbers and raw SMS/USSD content are not uploaded by the supplied Android portal-sync code; only masked phone numbers and transaction metadata are synced.
+- Remote retry is a request to the phone, not a direct server-side payment action.
+- The phone checks Safaricom confirmation messages and existing transaction state before retrying.
+- A phone that is offline or whose PesaLog service is stopped cannot process queued commands until it reconnects.
+
+## Database maintenance
+
+Run `supabase_setup.sql` in Supabase SQL Editor only if you need to provision or re-apply the schema/policies. It is idempotent for the existing schema. `pesalog_cleanup()` is privileged and is not exposed to authenticated/anonymous clients. Schedule it separately through Supabase Cron only if retention cleanup is desired.
+
+## Current verification snapshot
+
+- Supabase project is active and healthy.
+- All three expected tables exist and RLS is enabled.
+- Owner-only policies are assigned to `authenticated`.
+- Anonymous table grants have been revoked.
+- No Edge Functions are currently required by this polling design.
+- Security Advisor currently reports leaked-password protection disabled; enable it in Supabase Auth settings.
