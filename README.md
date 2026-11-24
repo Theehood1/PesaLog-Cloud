@@ -29,3 +29,6 @@ For a brand-new Supabase project only, use `supabase_setup.sql` instead of the m
 - Full customer phone numbers, raw SMS and USSD replies are not uploaded.
 - Remote retry still runs on the target phone. That phone checks its own Safaricom inbox and existing transaction state before invoking the existing retry engine.
 - A retry attempt is not proof of delivery; wait for Safaricom confirmation.
+
+## V9.04
+Adds payment tabs (Completed, Verified, Unverified, Pending), per-phone battery and airtime refresh, commission summaries, a Plans tab (edit prices and commission, request learn-signature, choose which phone runs an offer's USSD). Database changes are in supabase_v9_04_migration.sql (already applied).

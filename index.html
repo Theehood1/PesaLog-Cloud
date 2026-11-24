@@ -43,6 +43,20 @@ select{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);b
 .toast.on{opacity:1}
 .err{color:var(--bad);min-height:1.2em;font-size:.9rem}
 .hide{display:none}
+
+.chip.completed,.chip.verified,.chip.ok{color:var(--ok);border-color:var(--ok)}
+.chip.unverified,.chip.warn{color:var(--warn);border-color:var(--warn)}
+.chip.reversed{color:var(--bad);border-color:var(--bad)}
+.seg{display:flex;gap:6px;margin:0 0 10px}
+.seg .tab{flex:1}
+.kv{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:2px 10px;font-size:.85rem;margin-top:6px}
+.kv b{font-weight:700}.kv .h{color:var(--muted)}
+.dev{padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.dev:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+input.f{width:100%;padding:10px;margin:4px 0 8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:1rem}
+label.f{display:block;font-size:.8rem;color:var(--muted)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.btn.small{padding:7px 11px;font-size:.85rem}
 </style>
 </head>
 <body>
@@ -59,15 +73,22 @@ select{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);b
 
   <div id="app" class="hide">
     <div class="card" id="devices"></div>
-    <div class="card"><label for="deviceFilter"><b>Show transactions from</b></label><select id="deviceFilter"><option value="all">All devices</option></select></div>
-    <div class="tabs" id="tabs" role="group" aria-label="Payments"></div>
-    <div class="tool">
-      <button class="btn ghost" id="selAll" type="button">Select all</button>
-      <button class="btn ghost" id="selNone" type="button">Clear</button>
-      <button class="btn ghost" id="refresh" type="button">Refresh</button>
-      <span class="status" id="when"></span>
+    <div class="card"><label for="deviceFilter"><b>Show data from</b></label><select id="deviceFilter"><option value="all">All devices</option></select></div>
+    <div class="seg" id="views"></div>
+    <div id="payView">
+      <div class="tabs" id="tabs" role="group" aria-label="Payments"></div>
+      <div class="tool">
+        <button class="btn ghost" id="selAll" type="button">Select all</button>
+        <button class="btn ghost" id="selNone" type="button">Clear</button>
+        <button class="btn ghost" id="refresh" type="button">Refresh</button>
+        <span class="status" id="when"></span>
+      </div>
+      <div id="list"></div>
     </div>
-    <div id="list"></div>
+    <div id="planView" class="hide">
+      <div class="tool"><button class="btn ghost" id="refresh2" type="button">Refresh</button><span class="status" id="when2"></span></div>
+      <div id="plans"></div>
+    </div>
   </div>
 </div>
 
@@ -87,9 +108,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_5yKJEABZ51uW7Xa8Qn5gKQ_NVZLbuoc";
 /* ===================================================================== */
 
 const $ = id => document.getElementById(id);
-const TABS = [["failed","Failed"],["unconfirmed","Unconfirmed"],["received","Received"],["pending","Pending"]];
-let tab = "failed", rows = [], cmds = {}, devices = [], selected = new Set(), selectedDevice = "all", timer = null, busy = false;
-
+const TABS = [["failed","Failed"],["unconfirmed","Unconfirmed"],["received","Received"],["pending","Pending"],["completed","Completed"],["verified","Verified"],["unverified","Unverified"]];
+const RETRY_OK = ["failed","unconfirmed","received"];
+const TAB_HELP = {unverified:"Customer number could not be found on the phone (hidden by Safaricom). Numbers are always masked here.", verified:"Completed and confirmed by a Safaricom message on the phone.", completed:"Bundle sent. Not every completed payment has a Safaricom confirmation yet."};
+let tab = "failed", view = "pay", rows = [], plansData = [], jobs = {}, cmds = {}, devices = [], selected = new Set(), selectedDevice = "all", timer = null, busy = false, editing = null;
 /* ---------- session ---------- */
 function getSession(){ try{ return JSON.parse(localStorage.getItem("pl_session")||"null"); }catch(e){ return null; } }
 function saveSession(j){
@@ -128,105 +150,224 @@ function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.clas
 const kes = n => "KES " + Number(n||0).toLocaleString("en-KE", {maximumFractionDigits:2});
 
 /* ---------- data ---------- */
-function rowKey(r){ return String(r.device_id||"legacy") + "::" + r.ref; }
-function visibleRows(){ return selectedDevice==="all" ? rows : rows.filter(r => String(r.device_id||"legacy")===selectedDevice); }
+const dkey = d => String(d||"legacy");
+function devName(id){ const d=devices.find(x=>dkey(x.device_id)===dkey(id)); return d?(d.device_name||"Unnamed phone"):(dkey(id)==="legacy"?"Main Phone":"another phone"); }
+const cmdKey = (dev, ref, action) => dkey(dev)+"::"+ref+"::"+action;
+function rowKey(r){ return dkey(r.device_id) + "::" + r.ref; }
+function visibleRows(){ return selectedDevice==="all" ? rows : rows.filter(r => dkey(r.device_id)===selectedDevice); }
+function inTab(r,k){
+  if(k==="verified") return r.status==="completed" && r.verified===true;
+  if(k==="unverified") return r.no_number===true;
+  return r.status===k;
+}
 async function load(){
   if(busy) return; busy = true;
   try{
     const since = new Date(Date.now()-6*3600*1000).toISOString();
-    const [txn, cm, dev] = await Promise.all([
-      api("txn_sync?select=ref,device_id,device_name,name,phone_masked,amount,plan,status,reason,paid_at&status=in.(failed,unconfirmed,received,pending)&order=paid_at.desc&limit=1000"),
-      api("commands?select=ref,device_id,status,result,updated_at&created_at=gte."+since+"&order=created_at.desc&limit=1000"),
-      api("device_state?select=*&order=last_seen.desc&limit=100")
+    const [txn, cm, dev, pl, jb] = await Promise.all([
+      api("txn_sync?select=ref,device_id,device_name,name,phone_masked,amount,plan,status,reason,paid_at,verified,no_number&order=paid_at.desc&limit=1000"),
+      api("commands?select=ref,device_id,action,status,result,updated_at&created_at=gte."+since+"&order=created_at.desc&limit=1000"),
+      api("device_state?select=*&order=last_seen.desc&limit=100"),
+      api("plans_sync?select=*&order=price.asc&limit=500"),
+      api("remote_jobs?select=ref,from_device,to_device,status,result,updated_at&order=created_at.desc&limit=400")
     ]);
-    rows = txn||[]; devices = dev||[]; cmds = {};
-    (cm||[]).forEach(c => { const k=String(c.device_id||"legacy")+"::"+c.ref; if(!cmds[k]) cmds[k] = c; });
-    if(selectedDevice!=="all" && !devices.some(d => String(d.device_id||"legacy")===selectedDevice)) selectedDevice="all";
+    rows = txn||[]; devices = dev||[]; plansData = pl||[]; cmds = {}; jobs = {};
+    (jb||[]).forEach(j => { jobs[j.ref] = j; });
+    (cm||[]).forEach(c => { const k=cmdKey(c.device_id,c.ref,c.action); if(!cmds[k]) cmds[k] = c; });
+    if(selectedDevice!=="all" && !devices.some(d => dkey(d.device_id)===selectedDevice)) selectedDevice="all";
     const valid = new Set(rows.map(rowKey));
     selected.forEach(k => { if(!valid.has(k)) selected.delete(k); });
-    drawDevices(); drawDeviceFilter(); draw();
-    $("when").textContent = "Updated " + new Date().toLocaleTimeString();
+    drawDevices(); drawDeviceFilter(); drawViews(); draw(); if(!editing) drawPlans();
+    const t = "Updated " + new Date().toLocaleTimeString(); $("when").textContent = t; $("when2").textContent = t;
   }catch(e){
     if(e.message==="login"){ showLogin(); } else { toast(e.message); }
   }finally{ busy = false; }
 }
 
+function sumOf(d, k){ const s = d.summary && d.summary[k]; return s || {n:0,sales:0,comm:0}; }
 function drawDevices(){
   const c=$("devices"); c.textContent="";
   if(!devices.length){ c.appendChild(el("div","status","No phones have reported yet. Connect PesaLog on each phone and tap Sync now.")); return; }
-  devices.forEach(d=>{
+  const shown = selectedDevice==="all" ? devices : devices.filter(d => dkey(d.device_id)===selectedDevice);
+  shown.forEach(d=>{
+    const box=el("div","dev");
     const fresh=d.last_seen && (Date.now()-new Date(d.last_seen).getTime())<5*60*1000;
     const title=el("div",null,(fresh?"🟢":"🔴")+" "+(d.device_name||"Unnamed phone")+" · "+(fresh?"Online":"Offline")+" · seen "+ago(d.last_seen));
-    title.style.fontWeight="700"; c.appendChild(title);
-    const bits=[]; if(d.app_version) bits.push("PesaLog "+d.app_version); if(d.airtime!=null) bits.push("Airtime "+kes(d.airtime)); if(d.automation===false) bits.push("⚠ Automation is OFF");
-    c.appendChild(el("div","status",bits.join(" · ")));
-    if(!fresh) c.appendChild(el("div","status","Remote retries wait until this phone is online and PesaLog is running."));
-    c.appendChild(el("div","status","Device ID: "+String(d.device_id||"legacy").slice(0,8)));
-    c.appendChild(el("hr","",null));
+    title.style.fontWeight="700"; box.appendChild(title);
+    const bits=[]; if(d.app_version) bits.push("PesaLog "+d.app_version);
+    if(d.battery!=null) bits.push("🔋 "+d.battery+"%"+(d.charging?" ⚡ charging":"")+(d.battery<=15&&!d.charging?" ⚠ low":""));
+    if(d.automation===false) bits.push("⚠ Automation is OFF");
+    box.appendChild(el("div","status",bits.join(" · ")));
+    const air = d.airtime!=null ? "Airtime "+kes(d.airtime)+(d.airtime_at?" · read "+ago(d.airtime_at):"") : "Airtime not read yet";
+    box.appendChild(el("div","status",air));
+    const ac=cmds[cmdKey(d.device_id,"airtime","airtime")], aActive=ac&&(ac.status==="queued"||ac.status==="running");
+    const btns=el("div","btns");
+    const rb=el("button","btn small", aActive?"Checking airtime…":"Refresh airtime"); rb.type="button"; rb.disabled=!!aActive||!fresh;
+    rb.onclick=()=>sendCmd(d.device_id,"airtime","airtime",null,"Airtime check sent. The phone runs it within a minute.");
+    btns.appendChild(rb); box.appendChild(btns);
+    if(ac && !aActive && ac.result) box.appendChild(el("div","status","Phone: "+ac.result+" ("+ago(ac.updated_at)+")"));
+    if(!fresh) box.appendChild(el("div","status","Commands wait until this phone is online and PesaLog is running."));
+    if(d.summary){
+      const g=el("div","kv"); ["","Today","7 days","Month"].forEach(h=>g.appendChild(el("span","h",h)));
+      [["Sales","sales"],["Commission","comm"],["Count","n"]].forEach(([lbl,f])=>{
+        g.appendChild(el("span","h",lbl));
+        ["today","week","month"].forEach(k=>{ const v=sumOf(d,k)[f]; g.appendChild(el("b",null,f==="n"?String(v):kes(v))); });
+      });
+      box.appendChild(g);
+    }
+    if(d.commission!=null) box.appendChild(el("div","status","Commission total from Safaricom message: "+kes(d.commission)+(d.commission_at?" · "+ago(d.commission_at):"")));
+    box.appendChild(el("div","status","Device ID: "+dkey(d.device_id).slice(0,8)));
+    c.appendChild(box);
   });
 }
 function drawDeviceFilter(){
   const sel=$("deviceFilter"), old=selectedDevice; sel.textContent="";
   const all=document.createElement("option"); all.value="all"; all.textContent="All devices"; sel.appendChild(all);
-  devices.forEach(d=>{ const o=document.createElement("option"); o.value=String(d.device_id||"legacy"); o.textContent=d.device_name||"Unnamed phone"; sel.appendChild(o); });
-  sel.value=devices.some(d=>String(d.device_id||"legacy")===old)?old:"all";
+  devices.forEach(d=>{ const o=document.createElement("option"); o.value=dkey(d.device_id); o.textContent=d.device_name||"Unnamed phone"; sel.appendChild(o); });
+  sel.value=devices.some(d=>dkey(d.device_id)===old)?old:"all";
   selectedDevice=sel.value;
+}
+function drawViews(){
+  const v=$("views"); v.textContent="";
+  [["pay","Payments"],["plans","Plans"]].forEach(([k,l])=>{
+    const b=el("button","tab",l); b.type="button"; b.setAttribute("aria-pressed",String(view===k));
+    b.onclick=()=>{ view=k; drawViews(); $("payView").classList.toggle("hide",view!=="pay"); $("planView").classList.toggle("hide",view!=="plans"); $("bar").classList.toggle("hide",view!=="pay"); };
+    v.appendChild(b);
+  });
 }
 
 function draw(){
   const current=visibleRows();
   const tabs = $("tabs"); tabs.textContent = "";
   TABS.forEach(([k,label]) => {
-    const n = current.filter(r => r.status===k).length;
+    const n = current.filter(r => inTab(r,k)).length;
     const b = el("button","tab",label + " " + n); b.type="button"; b.setAttribute("aria-pressed", String(tab===k));
     b.onclick = () => { tab = k; selected.clear(); draw(); };
     tabs.appendChild(b);
   });
   const list = $("list"); list.textContent = "";
-  const vis = current.filter(r => r.status===tab);
+  if(TAB_HELP[tab]) list.appendChild(el("div","status",TAB_HELP[tab]));
+  const vis = current.filter(r => inTab(r,tab));
   if(!vis.length){ const c = el("div","card"); c.appendChild(el("div","status","Nothing here. 🎉")); list.appendChild(c); }
-  vis.forEach(r => {
+  vis.slice(0,300).forEach(r => {
     const card = el("div","card"), row = el("div","row"), key=rowKey(r);
-    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked = selected.has(key);
-    const cm = cmds[key], active = cm && (cm.status==="queued"||cm.status==="running");
-    cb.disabled = !!active;
-    cb.onchange = () => { cb.checked ? selected.add(key) : selected.delete(key); count(); };
+    const cm = cmds[cmdKey(r.device_id,r.ref,"retry")], active = cm && (cm.status==="queued"||cm.status==="running");
+    const canRetry = RETRY_OK.includes(r.status);
     const mid = el("div","grow");
+    if(canRetry){
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.checked = selected.has(key); cb.disabled = !!active;
+      cb.onchange = () => { cb.checked ? selected.add(key) : selected.delete(key); count(); };
+      row.appendChild(cb);
+    }
     mid.appendChild(el("div","name", r.name || "Unknown"));
-    const deviceName=r.device_name || (r.device_id==="legacy"?"Main Phone":"Unnamed phone");
+    const deviceName=r.device_name || (dkey(r.device_id)==="legacy"?"Main Phone":"Unnamed phone");
     mid.appendChild(el("div","sub", deviceName+" · "+(r.phone_masked||"number hidden")+" · "+ago(r.paid_at)+(r.plan?" · "+r.plan:"")));
     const chips = el("div","reason"); chips.appendChild(el("span","chip "+r.status, r.status));
+    if(r.verified) chips.appendChild(el("span","chip verified","verified"));
+    if(r.no_number) chips.appendChild(el("span","chip unverified","number unknown"));
+    const jb=jobs[r.ref]; if(jb && dkey(jb.from_device)===dkey(r.device_id)) chips.appendChild(el("span","chip "+(jb.status==="failed"?"cmdbad":"cmd"),"USSD on "+devName(jb.to_device)+": "+jb.status));
     if(cm){ const bad=cm.status==="failed"; chips.appendChild(el("span","chip "+(bad?"cmdbad":"cmd"),cm.status==="queued"?"waiting for phone":cm.status==="running"?"running":cm.status==="done"?"retried":"retry failed")); }
     mid.appendChild(chips);
     if(r.reason) mid.appendChild(el("div","reason status",r.reason));
     if(cm && cm.result && !active) mid.appendChild(el("div","reason status","Phone: "+cm.result));
-    row.append(cb,mid,el("div","amt",kes(r.amount))); card.appendChild(row); list.appendChild(card);
+    if(jb && jb.result && dkey(jb.from_device)===dkey(r.device_id)) mid.appendChild(el("div","reason status",devName(jb.to_device)+": "+jb.result));
+    row.append(mid,el("div","amt",kes(r.amount))); card.appendChild(row); list.appendChild(card);
   });
+  if(vis.length>300) list.appendChild(el("div","status","Showing the newest 300 of "+vis.length+"."));
   count();
 }
 function count(){
   const n = selected.size; $("count").textContent = n + " selected"; $("retry").disabled = n===0;
 }
 
+/* ---------- plans ---------- */
+function sigText(s){ return s==="approved"?"Signature on":s==="learned"?"Signature learned, not approved":s==="outdated"?"Signature outdated":"No signature"; }
+function drawPlans(){
+  const box=$("plans"); box.textContent="";
+  const list = selectedDevice==="all" ? plansData : plansData.filter(p => dkey(p.device_id)===selectedDevice);
+  if(!list.length){ box.appendChild(el("div","card")).appendChild(el("div","status","No plans uploaded yet. Update PesaLog on the phone and tap Sync now.")); return; }
+  const note=el("div","status","USSD codes, SIM and signature steps never leave the phone. Edits apply only if \"Allow plan edits from the portal\" is on in the phone's Settings > Portal sync.");
+  box.appendChild(note);
+  list.forEach(p=>{
+    const dev=devices.find(d=>dkey(d.device_id)===dkey(p.device_id))||{};
+    const dn=dev.device_name||(dkey(p.device_id)==="legacy"?"Main Phone":"Phone");
+    const card=el("div","card"), row=el("div","row"), mid=el("div","grow");
+    mid.appendChild(el("div","name",p.name||"Plan"));
+    mid.appendChild(el("div","sub",dn+" · "+(p.category||"General")+" · "+(p.hours||"All day")));
+    mid.appendChild(el("div","sub","Safaricom price "+kes(p.cost)+" · Commission "+kes(p.commission)));
+    mid.appendChild(el("div","sub",p.run_on?"USSD runs on: "+devName(p.run_on)+" (this phone only receives the SMS)":"USSD runs on: this phone"));
+    const chips=el("div","reason"); chips.appendChild(el("span","chip "+(p.enabled?"ok":"warn"),p.enabled?"on":"off")); chips.appendChild(el("span","chip",sigText(p.sig))); mid.appendChild(chips);
+    const ek=cmdKey(p.device_id,String(p.plan_id),"plan_edit"), lk=cmdKey(p.device_id,String(p.plan_id),"learn_sig");
+    [ek,lk].forEach(k=>{ const c=cmds[k]; if(c&&c.result) mid.appendChild(el("div","reason status","Phone: "+c.result+" ("+ago(c.updated_at)+")")); });
+    row.append(mid,el("div","amt",kes(p.price))); card.appendChild(row);
+    const btns=el("div","btns");
+    const eb=el("button","btn small ghost","Edit"); eb.type="button"; eb.disabled=dev.allow_edits!==true;
+    eb.title=dev.allow_edits===true?"":"Plan edits are switched off on this phone.";
+    eb.onclick=()=>{ editing=dkey(p.device_id)+"::"+p.plan_id; drawPlans(); };
+    const lb=el("button","btn small ghost","Request learn signature"); lb.type="button";
+    lb.onclick=()=>{ if(confirm("This only sends a notification to the phone. Learning runs USSD menus, so someone must start it on the phone (Plans > "+p.name+" > Learn Signature). Send?")) sendCmd(p.device_id,"learn_sig",String(p.plan_id),null,"Request sent. Check the phone."); };
+    btns.append(eb,lb);
+    if(dev.allow_edits!==true) btns.appendChild(el("span","status","Edits off on phone"));
+    card.appendChild(btns);
+    if(editing===dkey(p.device_id)+"::"+p.plan_id) card.appendChild(editForm(p));
+    box.appendChild(card);
+  });
+}
+function field(lbl,val,type,id){
+  const w=el("div"); const l=el("label","f",lbl); l.htmlFor=id; const i=document.createElement("input");
+  i.className="f"; i.id=id; i.type=type; if(type==="number") i.step="any"; i.value=val==null?"":val; w.append(l,i); return w;
+}
+function editForm(p){
+  const f=el("div"); f.style.marginTop="10px";
+  f.append(field("Name",p.name,"text","e_name"),field("Selling price (KES)",p.price,"number","e_price"),field("Safaricom price (KES)",p.cost,"number","e_cost"),field("Your commission (KES)",p.commission,"number","e_comm"),field("Category",p.category,"text","e_cat"));
+  const rl=el("label","f","Run this offer's USSD on"); rl.htmlFor="e_run"; const rs=document.createElement("select"); rs.id="e_run"; rs.className="f";
+  const o0=document.createElement("option"); o0.value=""; o0.textContent="This phone (the one that gets the SMS)"; rs.appendChild(o0);
+  devices.filter(d=>dkey(d.device_id)!==dkey(p.device_id)).forEach(d=>{ const o=document.createElement("option"); o.value=dkey(d.device_id); o.textContent=d.device_name||"Unnamed phone"; rs.appendChild(o); });
+  rs.value=p.run_on||""; f.append(rl,rs);
+  const lab=el("label","f"); const cb=document.createElement("input"); cb.type="checkbox"; cb.id="e_on"; cb.checked=p.enabled===true; cb.style.marginRight="8px"; lab.append(cb,document.createTextNode("Plan is on"));
+  f.appendChild(lab);
+  const b=el("div","btns"); const save=el("button","btn small","Send to phone"); save.type="button"; const cancel=el("button","btn small ghost","Cancel"); cancel.type="button";
+  cancel.onclick=()=>{ editing=null; drawPlans(); };
+  save.onclick=async()=>{
+    const price=parseFloat($("e_price").value), cost=parseFloat($("e_cost").value), commV=$("e_comm").value.trim(), name=$("e_name").value.trim(), cat=$("e_cat").value.trim();
+    if(!name||!cat||!(price>0)||!(cost>=0)){ toast("Check the name, category and prices."); return; }
+    const payload={plan_id:p.plan_id,name:name,price:price,cost:cost,commission:commV===""?null:parseFloat(commV),category:cat,enabled:$("e_on").checked,run_on:$("e_run").value};
+    if(!confirm("Send this plan change to "+(p.name||"the plan")+" on the phone?\n\nThe phone checks it again before applying. A wrong price can stop payments from matching this plan."+($("e_run").value?"\n\nPayments for this offer will be handed to "+devName($("e_run").value)+" to run the USSD. The customer's number is passed to that phone through your account and erased from the cloud once it picks it up.":""))) return;
+    if(await sendCmd(p.device_id,"plan_edit",String(p.plan_id),payload,"Plan change sent. The phone applies it within a minute.")){ editing=null; drawPlans(); }
+  };
+  b.append(save,cancel); f.appendChild(b); return f;
+}
+
 /* ---------- actions ---------- */
+async function sendCmd(device,action,ref,payload,okMsg){
+  try{
+    const body={ref:ref,device_id:dkey(device),action:action}; if(payload) body.payload=payload;
+    await api("commands",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify(body)});
+    toast(okMsg); await load(); return true;
+  }catch(e){
+    if(e.code==="23505") toast("That request is already waiting for the phone."); else toast(e.message);
+    return false;
+  }
+}
 $("selAll").onclick = () => {
-  visibleRows().filter(r => r.status===tab).forEach(r => { const c = cmds[rowKey(r)]; if(!(c && (c.status==="queued"||c.status==="running"))) selected.add(rowKey(r)); });
+  visibleRows().filter(r => inTab(r,tab) && RETRY_OK.includes(r.status)).forEach(r => { const c = cmds[cmdKey(r.device_id,r.ref,"retry")]; if(!(c && (c.status==="queued"||c.status==="running"))) selected.add(rowKey(r)); });
   draw();
 };
 $("selNone").onclick = () => { selected.clear(); draw(); };
-$("deviceFilter").onchange = e => { selectedDevice=e.target.value; selected.clear(); draw(); };
+$("deviceFilter").onchange = e => { selectedDevice=e.target.value; selected.clear(); editing=null; drawDevices(); draw(); drawPlans(); };
 $("refresh").onclick = () => load();
+$("refresh2").onclick = () => load();
 $("retry").onclick = async () => {
   const keys = [...selected]; if(!keys.length) return;
   const targets = keys.map(k => rows.find(r => rowKey(r)===k)).filter(Boolean);
   const risky = targets.filter(x => x.status!=="failed" && x.status!=="received").length;
   const names=[...new Set(targets.map(r=>r.device_name||"phone"))].join(", ");
   const msg = "Send " + targets.length + " retr" + (targets.length===1?"y":"ies") + " to the correct phone(s): " + names + "?\n\nEach phone checks its own Safaricom inbox before any retry and skips anything already delivered." +
-    (risky ? "\n\n" + risky + " of them are Unconfirmed or Pending: the USSD may already have run. The message check protects you, but a delivery whose confirmation never arrived could be sent twice." : "");
+    (risky ? "\n\n" + risky + " of them are Unconfirmed: the USSD may already have run. The message check protects you, but a delivery whose confirmation never arrived could be sent twice." : "");
   if(!confirm(msg)) return;
   $("retry").disabled = true;
   try{
-    await api("commands", {method:"POST", headers:{Prefer:"return=minimal"}, body:JSON.stringify(targets.map(r => ({ref:r.ref, device_id:r.device_id||"legacy", action:"retry"})))});
+    await api("commands", {method:"POST", headers:{Prefer:"return=minimal"}, body:JSON.stringify(targets.map(r => ({ref:r.ref, device_id:dkey(r.device_id), action:"retry"})))});
     toast("Sent to the phone. It picks them up within a minute.");
     selected.clear(); await load();
   }catch(e){
