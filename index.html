@@ -60,13 +60,13 @@ label.f{display:block;font-size:.8rem;color:var(--muted)}
 
 .wrap{padding-bottom:150px}
 .brand{font-weight:800;letter-spacing:-.01em;font-size:1.1rem}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:12px}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:0}
 .top select{width:auto;max-width:62%;padding:8px 10px}
-.view{display:none}.view.on{display:block}
+.view{display:none;padding-top:12px}.view.on{display:block}
 h2{font-size:1rem;margin:0 0 6px}
 .line{display:flex;justify-content:space-between;align-items:center;width:100%;gap:10px;padding:11px 0;background:none;border:0;border-top:1px solid var(--line);color:var(--text);font:inherit;text-align:left;cursor:pointer}
 .badv{color:var(--bad);font-weight:800}.warnv{color:var(--warn);font-weight:800}
-.search{display:flex;gap:8px;margin-bottom:8px}
+.search{display:flex;gap:8px;margin:0 0 8px;padding:0 0 8px;position:sticky;top:var(--topH,56px);z-index:4;background:var(--bg)}
 .search input{flex:1;min-width:0;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:1rem}
 .search select{width:auto}
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
@@ -92,7 +92,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <div class="top"><span class="brand">PesaLog</span><select id="deviceFilter" aria-label="Phone"><option value="all">All phones</option></select></div>
     <section class="view on" id="v-home"><div id="home"></div></section>
     <section class="view" id="v-tx">
-      <div class="search"><input id="q" type="search" placeholder="Search name, number, plan or reference" aria-label="Search"><select id="pp" aria-label="Rows to show"><option>30</option><option selected>60</option><option>100</option><option>200</option></select></div>
+      <div class="search"><input id="q" type="search" placeholder="Search name, number, amount, plan or code" aria-label="Search"><select id="pp" aria-label="Rows to show"><option>30</option><option selected>60</option><option>100</option><option>200</option></select></div>
       <div class="tabs" id="tabs" role="group" aria-label="Payment status"></div>
       <div class="tool">
         <button class="btn ghost" id="selAll" type="button">Select all</button>
@@ -110,7 +110,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <section class="view" id="v-more">
       <div class="card"><h2>Account</h2><div class="status">Signed in. Customer numbers are always masked here.</div><div class="tool" style="margin-top:10px"><button class="btn ghost hide" id="logout" type="button">Log out</button></div></div>
       <div class="card"><h2>How changes work</h2><div class="status">Retries, airtime checks and plan edits are sent to the phone, which double-checks them. Plan edits and offer forwarding wait for your approval on the phone. Phones sync about every 5 minutes.</div></div>
-      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.07</div></div>
+      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.08</div></div>
     </section>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
   </div>
@@ -302,6 +302,7 @@ function drawHome(){
 function drawViews(){ drawHome(); drawNav(); }
 
 function draw(){
+  setTopH();
   const current=visibleRows();
   const tabs = $("tabs"); tabs.textContent = "";
   TABS.forEach(([k,label]) => {
@@ -311,8 +312,10 @@ function draw(){
     tabs.appendChild(b);
   });
   const list = $("list"); list.textContent = "";
-  if(TAB_HELP[tab]) list.appendChild(el("div","status",TAB_HELP[tab]));
-  const vis = current.filter(r => inTab(r,tab)).filter(r => !q || [r.name,r.phone_masked,r.plan,r.ref].join(" ").toLowerCase().includes(q));
+  if(!q && TAB_HELP[tab]) list.appendChild(el("div","status",TAB_HELP[tab]));
+  const match = r => [r.name,r.phone_masked,r.plan,r.ref,r.amount,r.status,r.device_name].join(" ").toLowerCase().includes(q);
+  const vis = q ? current.filter(match) : current.filter(r => inTab(r,tab));
+  if(q) list.appendChild(el("div","status","Searching all payments: "+vis.length+" found."));
   if(!vis.length){ const c = el("div","card"); c.appendChild(el("div","status","Nothing here. 🎉")); list.appendChild(c); }
   vis.slice(0,perPage).forEach(r => {
     const card = el("div","card"), row = el("div","row"), key=rowKey(r);
@@ -421,6 +424,8 @@ $("selAll").onclick = () => {
 $("selNone").onclick = () => { selected.clear(); draw(); };
 $("deviceFilter").onchange = e => { selectedDevice=e.target.value; selected.clear(); editing=null; drawDevices(); draw(); drawPlans(); drawHome(); };
 $("refresh").onclick = () => load();
+function setTopH(){ const t=document.querySelector(".top"); if(t && t.offsetHeight) document.documentElement.style.setProperty("--topH", t.offsetHeight+"px"); }
+setTopH(); window.addEventListener("resize",setTopH); setTimeout(setTopH,500);
 $("q").oninput = e => { q = e.target.value.trim().toLowerCase(); draw(); };
 $("pp").onchange = e => { perPage = parseInt(e.target.value,10)||60; draw(); };
 $("refresh2").onclick = () => load();
