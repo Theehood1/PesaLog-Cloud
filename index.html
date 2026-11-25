@@ -76,6 +76,19 @@ h2{font-size:1rem;margin:0 0 6px}
 .toast{bottom:150px}
 .amt,.kv b{font-variant-numeric:tabular-nums}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.alertbar{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid;font:600 .85rem system-ui,sans-serif;text-align:left;cursor:pointer;background:var(--card)}
+.alertbar.bad{color:var(--bad);border-color:var(--bad)}.alertbar.warn{color:var(--warn);border-color:var(--warn)}
+.alertbar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.alertbar b{flex:0 0 auto}
+.line.bad{border-left:3px solid var(--bad);padding-left:9px}.line.warn{border-left:3px solid var(--warn);padding-left:9px}.line.info{border-left:3px solid var(--line);padding-left:9px;color:var(--muted)}
+.big{font-size:1.9rem;font-weight:800;margin:4px 0 6px;font-variant-numeric:tabular-nums}
+.kvr{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+.hours{display:flex;align-items:flex-end;gap:2px;height:90px;margin:8px 0 2px}.hcol{flex:1;height:100%;display:flex;align-items:flex-end}.hbar{width:100%;background:var(--brand);border-radius:3px 3px 0 0;min-height:0}
+.haxis{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-bottom:6px}
+.rk{display:grid;grid-template-columns:1fr 0 auto;gap:4px 10px;padding:8px 0;border-top:1px solid var(--line);font-size:.9rem;align-items:start}
+.rk.hd{border-top:0;color:var(--muted);font-size:.78rem;padding:0 0 4px}
+.rk b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.set{display:grid;grid-template-columns:1fr 92px;gap:6px 10px;align-items:center;margin-top:8px}.set input.f{margin:0}
+.chk{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.92rem}.chk input{width:20px;height:20px}
 </style>
 </head>
 <body>
@@ -90,7 +103,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
   <div id="app" class="hide">
     <div class="top"><span class="brand">PesaLog</span><select id="deviceFilter" aria-label="Phone"><option value="all">All phones</option></select></div>
+    <button class="alertbar hide" id="alertbar" type="button"></button>
     <section class="view on" id="v-home"><div id="home"></div></section>
+    <section class="view" id="v-sum"><div id="sum"></div></section>
     <section class="view" id="v-tx">
       <div class="search"><input id="q" type="search" placeholder="Search name, number, amount, plan or code" aria-label="Search"><select id="pp" aria-label="Rows to show"><option>30</option><option selected>60</option><option>100</option><option>200</option></select></div>
       <div class="tabs" id="tabs" role="group" aria-label="Payment status"></div>
@@ -109,8 +124,19 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <section class="view" id="v-dev"><div class="card" id="devices"></div></section>
     <section class="view" id="v-more">
       <div class="card"><h2>Account</h2><div class="status">Signed in. Customer numbers are always masked here.</div><div class="tool" style="margin-top:10px"><button class="btn ghost hide" id="logout" type="button">Log out</button></div></div>
+      <div class="card"><h2>Alert settings</h2><div class="status">Alerts show on Home and as a bar on every page. These limits are saved in this browser.</div>
+        <div class="set"><label class="f" for="a_off">Phone offline after (minutes)</label><input class="f" id="a_off" type="number" min="2" step="1" inputmode="numeric">
+        <label class="f" for="a_air">Low airtime below (KES)</label><input class="f" id="a_air" type="number" min="0" step="any" inputmode="decimal">
+        <label class="f" for="a_stuck">Payment stuck as Received after (minutes)</label><input class="f" id="a_stuck" type="number" min="1" step="1" inputmode="numeric">
+        <label class="f" for="a_bat">Low battery at or below (%)</label><input class="f" id="a_bat" type="number" min="1" max="100" step="1" inputmode="numeric"></div>
+        <label class="chk"><input type="checkbox" id="a_notify"> Browser notification for new alerts</label>
+        <label class="chk"><input type="checkbox" id="a_sound"> Beep for new serious alerts</label>
+        <div class="status" style="margin-top:8px">Notifications and beeps only work while this portal is open in a browser tab or home-screen app. If the phone puts the tab to sleep, they pause.</div></div>
+      <div class="card"><h2>Backup</h2><div class="status">Downloads every payment the portal holds, with customer numbers still masked. Keep a copy in Google Drive or email it to yourself.</div>
+        <div class="btns"><button class="btn small" id="bkCsv" type="button">Payments (CSV)</button><button class="btn small ghost" id="bkJson" type="button">Full backup (JSON)</button></div>
+        <div class="status" id="backupInfo" style="margin-top:8px"></div></div>
       <div class="card"><h2>How changes work</h2><div class="status">Retries, airtime checks and plan edits are sent to the phone, which double-checks them. Plan edits and offer forwarding wait for your approval on the phone. Phones sync about every 5 minutes.</div></div>
-      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.08</div></div>
+      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.09</div></div>
     </section>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
   </div>
@@ -202,7 +228,7 @@ async function load(){
     if(selectedDevice!=="all" && !devices.some(d => dkey(d.device_id)===selectedDevice)) selectedDevice="all";
     const valid = new Set(rows.map(rowKey));
     selected.forEach(k => { if(!valid.has(k)) selected.delete(k); });
-    drawDevices(); drawDeviceFilter(); drawViews(); draw(); if(!editing) drawPlans();
+    refreshAlerts(); drawDevices(); drawDeviceFilter(); drawViews(); draw(); drawSummary(); drawBackupInfo(); notifyNew(); if(!editing) drawPlans();
     const t = "Updated " + new Date().toLocaleTimeString(); $("when").textContent = t; $("when2").textContent = t;
   }catch(e){
     if(e.message==="login"){ showLogin(); } else { toast(e.message); }
@@ -216,7 +242,7 @@ function drawDevices(){
   const shown = selectedDevice==="all" ? devices : devices.filter(d => dkey(d.device_id)===selectedDevice);
   shown.forEach(d=>{
     const box=el("div","dev");
-    const fresh=d.last_seen && (Date.now()-new Date(d.last_seen).getTime())<8*60*1000;
+    const fresh=isFresh(d);
     const title=el("div",null,(fresh?"🟢":"🔴")+" "+(d.device_name||"Unnamed phone")+" · "+(fresh?"Online":"Offline")+" · seen "+ago(d.last_seen));
     title.style.fontWeight="700"; box.appendChild(title);
     const bits=[]; if(d.app_version) bits.push("PesaLog "+d.app_version);
@@ -252,8 +278,8 @@ function drawDeviceFilter(){
   sel.value=devices.some(d=>dkey(d.device_id)===old)?old:"all";
   selectedDevice=sel.value;
 }
-const NAV=[["home","Home"],["tx","Payments"],["plans","Plans"],["dev","Phones"],["more","More"]];
-const IC={home:"M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",tx:"M4 6h16M4 12h16M4 18h10",plans:"M4 7l8-4 8 4v10l-8 4-8-4z",dev:"M8 2h8a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",more:"M5 12h.01M12 12h.01M19 12h.01"};
+const NAV=[["home","Home"],["sum","Summary"],["tx","Payments"],["plans","Plans"],["dev","Phones"],["more","More"]];
+const IC={sum:"M5 20V10M12 20V4M19 20v-7",home:"M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",tx:"M4 6h16M4 12h16M4 18h10",plans:"M4 7l8-4 8 4v10l-8 4-8-4z",dev:"M8 2h8a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",more:"M5 12h.01M12 12h.01M19 12h.01"};
 function drawNav(){
   const n=$("nav"); n.textContent="";
   NAV.forEach(([k,l])=>{
@@ -267,11 +293,16 @@ function show(k,status){
   NAV.forEach(([v])=>$("v-"+v).classList.toggle("on",v===k));
   $("bar").classList.toggle("hide",k!=="tx");
   try{ history.replaceState(null,"","#"+k); }catch(e){}
-  drawNav(); window.scrollTo(0,0);
+  drawNav(); drawAlertBar(); window.scrollTo(0,0);
 }
-const isFresh=d=>d.last_seen&&(Date.now()-new Date(d.last_seen).getTime())<8*60*1000;
+const isFresh=d=>!!d.last_seen&&(Date.now()-new Date(d.last_seen).getTime())<cfg.off*60*1000;
 function drawHome(){
   const h=$("home"); h.textContent="";
+  const ac=el("div","card"), act=curAlerts.filter(a=>a.lv!=="info");
+  ac.appendChild(el("h2",null,"Alerts"+(act.length?" ("+act.length+")":"")));
+  if(!act.length) ac.appendChild(el("div","status","✅ All clear: phones online, airtime fine, nothing stuck."));
+  curAlerts.forEach(a=>{ const r=el("button","line "+a.lv); r.type="button"; r.appendChild(el("span",null,a.t)); r.onclick=()=>{ if(a.tab) show(a.go,a.tab); else show(a.go); }; ac.appendChild(r); });
+  h.appendChild(ac);
   const cur=visibleRows(), cnt=k=>cur.filter(r=>inTab(r,k)).length;
   const att=el("div","card"); att.appendChild(el("h2",null,"Needs attention")); let any=false;
   [["failed","Failed payments","badv"],["unconfirmed","Unconfirmed payments","badv"],["received","Received, not processed yet","warnv"]].forEach(([k,l,c])=>{
@@ -460,10 +491,225 @@ $("retry").onclick = async () => {
   }
 };
 
+/* ---------- V9.09: alerts, daily summary, backup ---------- */
+const CFG_DEF={off:10,air:100,stuck:10,bat:15,notify:false,sound:false};
+let cfg=Object.assign({},CFG_DEF); try{ Object.assign(cfg,JSON.parse(localStorage.getItem("pl_alert_cfg")||"{}")); }catch(e){}
+let curAlerts=[], seen=null, sumRange="today", sumCache=null;
+const DAY=864e5;
+function saveCfgStore(){ try{ localStorage.setItem("pl_alert_cfg",JSON.stringify(cfg)); }catch(e){} }
+
+function computeAlerts(){
+  const out=[], now=Date.now();
+  devices.forEach(d=>{
+    const n=d.device_name||"Phone", id=dkey(d.device_id);
+    if(!isFresh(d)) out.push({k:"off:"+id,lv:"bad",t:"📵 "+n+" is offline. Last seen "+ago(d.last_seen)+".",go:"dev"});
+    if(d.automation===false) out.push({k:"auto:"+id,lv:"bad",t:"⚠ Automation is OFF on "+n+".",go:"dev"});
+    if(d.airtime!=null && Number(d.airtime)<cfg.air) out.push({k:"air:"+id,lv:"bad",t:"📉 Low airtime on "+n+": "+kes(d.airtime)+".",go:"dev"});
+    if(d.battery!=null && d.battery<=cfg.bat && !d.charging) out.push({k:"bat:"+id,lv:"warn",t:"🔋 "+n+" battery is "+d.battery+"% and not charging.",go:"dev"});
+  });
+  const sum=a=>a.reduce((s,r)=>s+Number(r.amount||0),0), oldest=a=>ago(a.map(r=>r.paid_at).filter(Boolean).sort()[0]);
+  const f=rows.filter(r=>r.status==="failed"), u=rows.filter(r=>r.status==="unconfirmed");
+  const st=rows.filter(r=>r.status==="received"&&r.paid_at&&now-new Date(r.paid_at).getTime()>cfg.stuck*60000);
+  if(f.length) out.push({k:"failed:"+f.length,lv:"bad",t:"❌ "+f.length+" failed payment"+(f.length>1?"s":"")+" ("+kes(sum(f))+"). Oldest "+oldest(f)+".",go:"tx",tab:"failed"});
+  if(u.length) out.push({k:"unconf:"+u.length,lv:"bad",t:"❓ "+u.length+" unconfirmed payment"+(u.length>1?"s":"")+" ("+kes(sum(u))+"). Oldest "+oldest(u)+".",go:"tx",tab:"unconfirmed"});
+  if(st.length) out.push({k:"stuck:"+st.length,lv:"warn",t:"⏳ "+st.length+" payment"+(st.length>1?"s":"")+" received but not processed for over "+cfg.stuck+" min ("+kes(sum(st))+").",go:"tx",tab:"received"});
+  const rf=Object.values(cmds).filter(c=>c.action==="retry"&&c.status==="failed").length;
+  if(rf) out.push({k:"retryfail:"+rf,lv:"warn",t:"🔁 "+rf+" retry request"+(rf>1?"s":"")+" failed on the phone in the last 6 hours.",go:"tx",tab:"failed"});
+  let lb=0; try{ lb=Number(localStorage.getItem("pl_last_backup")||0); }catch(e){}
+  if(!lb||now-lb>7*DAY) out.push({k:"backup",lv:"info",t:"💾 "+(lb?"Last backup was "+ago(new Date(lb).toISOString()):"No backup downloaded yet")+". Download one in More.",go:"more"});
+  const rank={bad:0,warn:1,info:2}; out.sort((a,b)=>rank[a.lv]-rank[b.lv]);
+  return out;
+}
+function drawAlertBar(){
+  const b=$("alertbar"); if(!b) return;
+  const act=curAlerts.filter(a=>a.lv!=="info");
+  if(!act.length||page==="home"){ b.classList.add("hide"); return; }
+  const bad=act.some(a=>a.lv==="bad");
+  b.className="alertbar "+(bad?"bad":"warn"); b.textContent="";
+  b.append(el("span",null,act[0].t),el("b",null,act.length>1?"+"+(act.length-1)+" more":"View"));
+}
+function beep(){ try{ const C=window.AudioContext||window.webkitAudioContext; if(!C) return; const a=new C(), o=a.createOscillator(), g=a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value=880; g.gain.value=.15; o.start(); o.stop(a.currentTime+.4); setTimeout(()=>{try{a.close();}catch(e){}},700); }catch(e){} }
+function notifyNew(){
+  const act=curAlerts.filter(a=>a.lv!=="info");
+  document.title=(act.length?"("+act.length+") ":"")+"PesaLog portal";
+  const keys=new Set(act.map(a=>a.k));
+  if(seen){
+    const fresh=act.filter(a=>!seen.has(a.k));
+    if(fresh.length){
+      if(cfg.sound && fresh.some(a=>a.lv==="bad")) beep();
+      if(cfg.notify && "Notification" in window && Notification.permission==="granted"){
+        try{ new Notification("PesaLog alert",{body:fresh.map(a=>a.t).join("\n"),tag:"pesalog-alert"}); }catch(e){}
+      }
+    }
+  }
+  seen=keys;
+}
+function refreshAlerts(){ curAlerts=computeAlerts(); drawAlertBar(); }
+
+/* ----- alert settings ----- */
+function initCfgUI(){
+  $("a_off").value=cfg.off; $("a_air").value=cfg.air; $("a_stuck").value=cfg.stuck; $("a_bat").value=cfg.bat;
+  $("a_notify").checked=!!cfg.notify; $("a_sound").checked=!!cfg.sound;
+}
+function readNum(id,def,min){ const v=parseFloat($(id).value); return (isFinite(v)&&v>=min)?v:def; }
+function onCfgChange(){
+  cfg.off=readNum("a_off",CFG_DEF.off,2); cfg.air=readNum("a_air",CFG_DEF.air,0); cfg.stuck=readNum("a_stuck",CFG_DEF.stuck,1); cfg.bat=readNum("a_bat",CFG_DEF.bat,1);
+  saveCfgStore(); initCfgUI(); refreshAlerts(); drawHome(); drawDevices(); toast("Alert settings saved.");
+}
+["a_off","a_air","a_stuck","a_bat"].forEach(id=>{ $(id).onchange=onCfgChange; });
+$("a_sound").onchange=e=>{ cfg.sound=e.target.checked; saveCfgStore(); if(cfg.sound) beep(); };
+$("a_notify").onchange=async e=>{
+  if(!e.target.checked){ cfg.notify=false; saveCfgStore(); return; }
+  if(!("Notification" in window)){ toast("This browser can't show notifications."); e.target.checked=false; return; }
+  let p=Notification.permission; if(p==="default"){ try{ p=await Notification.requestPermission(); }catch(x){} }
+  if(p!=="granted"){ toast("Notifications are blocked in the browser settings."); e.target.checked=false; cfg.notify=false; }
+  else { cfg.notify=true; toast("Notifications on while the portal stays open."); }
+  saveCfgStore();
+};
+$("alertbar").onclick=()=>show("home");
+
+/* ----- daily summary ----- */
+function sumBounds(k){
+  const n=new Date(), s=new Date(n.getFullYear(),n.getMonth(),n.getDate()), e=new Date(s); e.setDate(e.getDate()+1);
+  if(k==="yday"){ const y=new Date(s); y.setDate(y.getDate()-1); return [y,s]; }
+  if(k==="week"){ const w=new Date(s); w.setDate(w.getDate()-6); return [w,e]; }
+  return [s,e];
+}
+function planFor(r){
+  return plansData.find(p=>dkey(p.device_id)===dkey(r.device_id)&&p.name===r.plan) || plansData.find(p=>p.name===r.plan&&Number(p.price)===Number(r.amount)) || null;
+}
+function computeSummary(){
+  const [a,b]=sumBounds(sumRange), A=a.getTime(), B=b.getTime();
+  const S={a,b,n:0,sales:0,cost:0,comm:0,profit:0,unm:{n:0,sales:0},risk:{n:0,amt:0,failed:0,unconf:0,recv:0},byPlan:{},byDev:{},hours:new Array(24).fill(0),truncated:false};
+  const cur=visibleRows();
+  if(rows.length>=1000){ const old=rows.map(r=>r.paid_at).filter(Boolean).sort()[0]; if(old && new Date(old).getTime()>A) S.truncated=true; }
+  cur.forEach(r=>{
+    const t=r.paid_at?new Date(r.paid_at).getTime():0; if(t<A||t>=B) return;
+    const amt=Number(r.amount||0);
+    if(r.status==="completed"){
+      S.n++; S.sales+=amt; S.hours[new Date(t).getHours()]+=amt;
+      const dk=dkey(r.device_id), dd=S.byDev[dk]||(S.byDev[dk]={name:devName(r.device_id),n:0,sales:0,profit:0}); dd.n++; dd.sales+=amt;
+      const p=planFor(r);
+      if(p){
+        const cost=Number(p.cost||0), comm=Number(p.commission||0), pr=amt-cost+comm;
+        S.cost+=cost; S.comm+=comm; S.profit+=pr; dd.profit+=pr;
+        const pk=r.plan, pp=S.byPlan[pk]||(S.byPlan[pk]={name:pk,n:0,sales:0,profit:0}); pp.n++; pp.sales+=amt; pp.profit+=pr;
+      } else {
+        S.unm.n++; S.unm.sales+=amt;
+        const pk=r.plan||"(no plan)", pp=S.byPlan[pk]||(S.byPlan[pk]={name:pk,n:0,sales:0,profit:0,unknown:true}); pp.n++; pp.sales+=amt;
+      }
+    } else if(r.status==="failed"||r.status==="unconfirmed"||r.status==="received"){
+      S.risk.n++; S.risk.amt+=amt; if(r.status==="failed") S.risk.failed++; else if(r.status==="unconfirmed") S.risk.unconf++; else S.risk.recv++;
+    }
+  });
+  S.plans=Object.values(S.byPlan).sort((x,y)=>(y.profit-x.profit)||(y.sales-x.sales));
+  S.devs=Object.values(S.byDev).sort((x,y)=>(y.profit-x.profit)||(y.sales-x.sales));
+  return S;
+}
+function kvr(l,v,cls){ const d=el("div","kvr"); d.append(el("span",null,l),el("b",cls||null,v)); return d; }
+function sumLabel(S){
+  const f=d=>d.toLocaleDateString("en-KE",{weekday:"short",day:"numeric",month:"short"});
+  if(sumRange==="week"){ const e=new Date(S.b); e.setDate(e.getDate()-1); return f(S.a)+" to "+f(e); }
+  return (sumRange==="today"?"Today, ":"Yesterday, ")+f(S.a);
+}
+function sumText(S){
+  const L=["PesaLog summary · "+sumLabel(S),"Payments: "+S.n+" · Sales: "+kes(S.sales),"Safaricom cost: "+kes(S.cost)+" · Commission: "+kes(S.comm),"Profit: "+kes(S.profit)];
+  if(S.plans[0]) L.push("Top plan: "+S.plans[0].name+" ("+S.plans[0].n+" sold, profit "+kes(S.plans[0].profit)+")");
+  if(S.devs.length>1) S.devs.forEach(d=>L.push(d.name+": "+d.n+" sold, sales "+kes(d.sales)+", profit "+kes(d.profit)));
+  if(S.risk.n) L.push("Not delivered: "+S.risk.n+" payments ("+kes(S.risk.amt)+")");
+  return L.join("\n");
+}
+function drawSummary(){
+  const box=$("sum"); if(!box) return; box.textContent="";
+  const seg=el("div","seg");
+  [["today","Today"],["yday","Yesterday"],["week","7 days"]].forEach(([k,l])=>{ const b=el("button","tab",l); b.type="button"; b.setAttribute("aria-pressed",String(sumRange===k)); b.onclick=()=>{ sumRange=k; drawSummary(); }; seg.appendChild(b); });
+  box.appendChild(seg);
+  const S=computeSummary(); sumCache=S;
+  const c1=el("div","card"); c1.appendChild(el("div","status",sumLabel(S)+(selectedDevice==="all"?" · all phones":" · "+devName(selectedDevice))));
+  const big=el("div","big"+(S.profit<0?" badv":""),kes(S.profit)); c1.append(big,el("div","status","Profit = selling price − Safaricom price + your commission, for completed payments."));
+  c1.append(kvr("Sales",kes(S.sales)),kvr("Safaricom cost",kes(S.cost)),kvr("Commission",kes(S.comm)),kvr("Completed payments",String(S.n)));
+  if(S.sales>0&&S.n) c1.appendChild(kvr("Profit margin",(S.profit/S.sales*100).toFixed(1)+"%"));
+  if(S.unm.n) c1.appendChild(el("div","status",S.unm.n+" sale"+(S.unm.n>1?"s":"")+" ("+kes(S.unm.sales)+") had no matching plan, so they are left out of cost and profit."));
+  if(S.truncated) c1.appendChild(el("div","status","⚠ Only the newest 1000 payments are loaded, so earlier days in this range may be incomplete."));
+  box.appendChild(c1);
+  if(S.risk.n){
+    const c=el("div","card"); c.appendChild(el("h2",null,"Not delivered in this period"));
+    c.append(kvr("Payments taken, bundle not confirmed",S.risk.n+" · "+kes(S.risk.amt),"badv"));
+    const bits=[]; if(S.risk.failed) bits.push(S.risk.failed+" failed"); if(S.risk.unconf) bits.push(S.risk.unconf+" unconfirmed"); if(S.risk.recv) bits.push(S.risk.recv+" received");
+    c.appendChild(el("div","status",bits.join(" · ")));
+    const g=el("button","btn small ghost","Open in Payments"); g.type="button"; g.style.marginTop="8px"; g.onclick=()=>show("tx",S.risk.failed?"failed":S.risk.unconf?"unconfirmed":"received"); c.appendChild(g);
+    box.appendChild(c);
+  }
+  if(sumRange!=="week"&&S.sales>0){
+    const c=el("div","card"); c.appendChild(el("h2",null,"Sales by hour"));
+    const mx=Math.max.apply(null,S.hours), bars=el("div","hours");
+    S.hours.forEach((v,h)=>{ const col=el("div","hcol"); const bar=el("div","hbar"); bar.style.height=(mx?Math.max(v?4:0,v/mx*100):0)+"%"; bar.title=h+":00 · "+kes(v); col.appendChild(bar); bars.appendChild(col); });
+    c.appendChild(bars);
+    const ax=el("div","haxis"); ["0","6","12","18","23"].forEach(x=>ax.appendChild(el("span",null,x+"h"))); c.appendChild(ax);
+    const pk=S.hours.indexOf(mx); c.appendChild(el("div","status","Busiest hour: "+pk+":00 to "+(pk+1)+":00 ("+kes(mx)+")"));
+    box.appendChild(c);
+  }
+  const rk=(title,list,first)=>{
+    const c=el("div","card"); c.appendChild(el("h2",null,title));
+    if(!list.length){ c.appendChild(el("div","status","No completed sales in this period.")); return c; }
+    const h=el("div","rk hd"); ["",first,"Profit"].forEach(x=>h.appendChild(el("span",null,x))); c.appendChild(h);
+    list.slice(0,15).forEach((x,i)=>{
+      const r=el("div","rk"); const nm=el("span",null,(i===0&&x.profit>0?"★ ":"")+x.name); const sub=el("div","sub",x.n+" sold · sales "+kes(x.sales)); const w=el("div"); w.append(nm,sub);
+      r.append(w,el("span",null,""),el("b",x.profit<0?"badv":null,x.unknown?"n/a":kes(x.profit))); c.appendChild(r);
+    });
+    return c;
+  };
+  box.appendChild(rk("Best plans",S.plans,"Plan"));
+  if(S.devs.length>1||selectedDevice==="all") box.appendChild(rk("Phones",S.devs,"Phone"));
+  const t=el("div","btns"); const sh=el("button","btn","Share summary"); sh.type="button";
+  sh.onclick=async()=>{ const txt=sumText(S); try{ if(navigator.share){ await navigator.share({text:txt}); } else { await navigator.clipboard.writeText(txt); toast("Summary copied."); } }catch(e){ if(e&&e.name!=="AbortError"){ try{ await navigator.clipboard.writeText(txt); toast("Summary copied."); }catch(x){ toast("Could not share."); } } } };
+  t.appendChild(sh); box.appendChild(t);
+}
+
+/* ----- backup ----- */
+async function fetchAll(base){
+  let all=[], off=0;
+  for(let i=0;i<60;i++){
+    const part=await api(base+"&limit=1000&offset="+off);
+    if(!part||!part.length) break; all=all.concat(part); if(part.length<1000) break; off+=1000;
+  }
+  return all;
+}
+function csvCell(v){ if(v==null) return ""; let s=String(v); if(typeof v==="string"&&/^[=+\-@]/.test(s)) s="'"+s; return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function download(name,text,mime){
+  const u=URL.createObjectURL(new Blob([text],{type:mime})), a=document.createElement("a");
+  a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000);
+}
+function stamp(){ const d=new Date(), p=n=>String(n).padStart(2,"0"); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes()); }
+const TXN_COLS=["ref","device_name","device_id","name","phone_masked","amount","plan","status","reason","paid_at","verified","no_number"];
+function drawBackupInfo(){
+  let lb=0; try{ lb=Number(localStorage.getItem("pl_last_backup")||0); }catch(e){}
+  $("backupInfo").textContent=lb?"Last backup from this browser: "+new Date(lb).toLocaleString()+" ("+ago(new Date(lb).toISOString())+").":"No backup downloaded from this browser yet.";
+}
+async function doBackup(kind,btn){
+  const label=btn.textContent; btn.disabled=true; btn.textContent="Downloading…";
+  try{
+    const tx=await fetchAll("txn_sync?select="+TXN_COLS.join(",")+"&order=paid_at.desc,ref.asc");
+    if(kind==="csv"){
+      const head=TXN_COLS.join(","), body=tx.map(r=>TXN_COLS.map(c=>csvCell(r[c])).join(",")).join("\r\n");
+      download("pesalog-payments-"+stamp()+".csv","\ufeff"+head+"\r\n"+body,"text/csv;charset=utf-8");
+    } else {
+      const pl=await fetchAll("plans_sync?select=*&order=price.asc,plan_id.asc");
+      download("pesalog-backup-"+stamp()+".json",JSON.stringify({app:"PesaLog Cloud",exported_at:new Date().toISOString(),payments:tx,plans:pl},null,1),"application/json");
+    }
+    try{ localStorage.setItem("pl_last_backup",String(Date.now())); }catch(e){}
+    toast("Saved "+tx.length+" payments to your Downloads."); drawBackupInfo(); refreshAlerts(); drawHome();
+  }catch(e){ if(e.message==="login") showLogin(); else toast(e.message||"Backup failed."); }
+  btn.disabled=false; btn.textContent=label;
+}
+$("bkCsv").onclick=e=>doBackup("csv",e.currentTarget);
+$("bkJson").onclick=e=>doBackup("json",e.currentTarget);
+initCfgUI(); drawBackupInfo();
+
 /* ---------- login ---------- */
 function showApp(){ $("login").classList.add("hide"); $("app").classList.remove("hide"); show(page); $("logout").classList.remove("hide");
-  load(); clearInterval(timer); timer = setInterval(() => { if(!document.hidden) load(); }, 15000); }
-function showLogin(){ clearInterval(timer); $("app").classList.add("hide"); $("bar").classList.add("hide"); $("logout").classList.add("hide"); $("login").classList.remove("hide"); }
+  load(); clearInterval(timer); timer = setInterval(() => { if(!document.hidden || cfg.notify || cfg.sound) load(); }, 15000); }
+function showLogin(){ clearInterval(timer); seen=null; document.title="PesaLog portal"; $("app").classList.add("hide"); $("bar").classList.add("hide"); $("logout").classList.add("hide"); $("login").classList.remove("hide"); }
 $("go").onclick = async () => {
   $("err").textContent = ""; $("go").disabled = true;
   try{
