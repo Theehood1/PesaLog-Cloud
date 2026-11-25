@@ -110,7 +110,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <section class="view" id="v-more">
       <div class="card"><h2>Account</h2><div class="status">Signed in. Customer numbers are always masked here.</div><div class="tool" style="margin-top:10px"><button class="btn ghost hide" id="logout" type="button">Log out</button></div></div>
       <div class="card"><h2>How changes work</h2><div class="status">Retries, airtime checks and plan edits are sent to the phone, which double-checks them. Plan edits and offer forwarding wait for your approval on the phone. Phones sync about every 5 minutes.</div></div>
-      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.06</div></div>
+      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.07</div></div>
     </section>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
   </div>
@@ -118,7 +118,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 <div class="bar hide" id="bar"><div class="inner">
   <span class="status" id="count" style="flex:1">0 selected</span>
-  <button class="btn" id="retry" type="button" disabled>Retry selected</button>
+  <button class="btn" id="retry" type="button" disabled>Retry selected</button><button class="btn" id="verify" type="button" disabled>Mark verified</button>
 </div></div>
 <div class="toast" id="toast"></div>
 
@@ -316,11 +316,11 @@ function draw(){
   if(!vis.length){ const c = el("div","card"); c.appendChild(el("div","status","Nothing here. 🎉")); list.appendChild(c); }
   vis.slice(0,perPage).forEach(r => {
     const card = el("div","card"), row = el("div","row"), key=rowKey(r);
-    const cm = cmds[cmdKey(r.device_id,r.ref,"retry")], active = cm && (cm.status==="queued"||cm.status==="running");
+    const cm = cmds[cmdKey(r.device_id,r.ref,"retry")], active = cm && (cm.status==="queued"||cm.status==="running"); const vm=cmds[cmdKey(r.device_id,r.ref,"verify")], vactive=vm&&(vm.status==="queued"||vm.status==="running");
     const canRetry = RETRY_OK.includes(r.status);
     const mid = el("div","grow");
     if(canRetry){
-      const cb = document.createElement("input"); cb.type="checkbox"; cb.checked = selected.has(key); cb.disabled = !!active;
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.checked = selected.has(key); cb.disabled = !!active || !!vactive;
       cb.onchange = () => { cb.checked ? selected.add(key) : selected.delete(key); count(); };
       row.appendChild(cb);
     }
@@ -342,7 +342,7 @@ function draw(){
   count();
 }
 function count(){
-  const n = selected.size; $("count").textContent = n + " selected"; $("retry").disabled = n===0;
+  const n = selected.size; $("count").textContent = n + " selected"; $("retry").disabled = n===0; $("verify").disabled = n===0;
 }
 
 /* ---------- plans ---------- */
@@ -424,6 +424,18 @@ $("refresh").onclick = () => load();
 $("q").oninput = e => { q = e.target.value.trim().toLowerCase(); draw(); };
 $("pp").onchange = e => { perPage = parseInt(e.target.value,10)||60; draw(); };
 $("refresh2").onclick = () => load();
+$("verify").onclick = async () => {
+  const targets=[...selected].map(k=>rows.find(r=>rowKey(r)===k)).filter(r=>r&&!r.verified&&r.status!=="reversed");
+  if(!targets.length){toast("Select unverified transactions.");return;}
+  const names=[...new Set(targets.map(r=>r.device_name||"phone"))].join(", ");
+  if(!confirm("Send a manual verification request for "+targets.length+" transaction(s) to "+names+"? The phone must confirm the command and update its local record."))return;
+  $("verify").disabled=true;
+  try{
+    await api("commands",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify(targets.map(r=>({ref:r.ref,device_id:dkey(r.device_id),action:"verify",status:"queued",result:"Waiting for phone"})))});
+    toast("Verification request sent. It will show verified after the phone processes it.");
+    selected.clear();await load();
+  }catch(e){toast(e.code==="23505"?"Verification is already queued.":e.message||"Could not queue verification.");}
+};
 $("retry").onclick = async () => {
   const keys = [...selected]; if(!keys.length) return;
   const targets = keys.map(k => rows.find(r => rowKey(r)===k)).filter(Boolean);
