@@ -19,7 +19,7 @@ h1{font-size:1.2rem;margin:0}
 .btn[disabled]{opacity:.45;cursor:default}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
 .status{font-size:.85rem;color:var(--muted)}
-.tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 10px}
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:999px;padding:8px 14px;font:600 .9rem system-ui,sans-serif;cursor:pointer}
 .tab[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--ink)}
@@ -57,14 +57,31 @@ input.f{width:100%;padding:10px;margin:4px 0 8px;border-radius:10px;border:1px s
 label.f{display:block;font-size:.8rem;color:var(--muted)}
 .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .btn.small{padding:7px 11px;font-size:.85rem}
+
+.wrap{padding-bottom:150px}
+.brand{font-weight:800;letter-spacing:-.01em;font-size:1.1rem}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:12px}
+.top select{width:auto;max-width:62%;padding:8px 10px}
+.view{display:none}.view.on{display:block}
+h2{font-size:1rem;margin:0 0 6px}
+.line{display:flex;justify-content:space-between;align-items:center;width:100%;gap:10px;padding:11px 0;background:none;border:0;border-top:1px solid var(--line);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.badv{color:var(--bad);font-weight:800}.warnv{color:var(--warn);font-weight:800}
+.search{display:flex;gap:8px;margin-bottom:8px}
+.search input{flex:1;min-width:0;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:1rem}
+.search select{width:auto}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;background:none;border:0;color:var(--muted);font:600 .7rem system-ui,sans-serif;cursor:pointer}
+.nav button[aria-current=true]{color:var(--brand)}
+.bar{bottom:calc(56px + env(safe-area-inset-bottom));padding-bottom:10px;z-index:5}
+.toast{bottom:150px}
+.amt,.kv b{font-variant-numeric:tabular-nums}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header><h1>📶 PesaLog portal</h1><button class="btn ghost hide" id="logout" type="button">Log out</button></header>
-
   <div class="card" id="login">
-    <b>Log in</b>
+    <div class="brand">PesaLog Cloud</div>
     <input id="email" type="email" placeholder="Email" autocomplete="username">
     <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
     <div class="err" id="err"></div>
@@ -72,11 +89,11 @@ label.f{display:block;font-size:.8rem;color:var(--muted)}
   </div>
 
   <div id="app" class="hide">
-    <div class="card" id="devices"></div>
-    <div class="card"><label for="deviceFilter"><b>Show data from</b></label><select id="deviceFilter"><option value="all">All devices</option></select></div>
-    <div class="seg" id="views"></div>
-    <div id="payView">
-      <div class="tabs" id="tabs" role="group" aria-label="Payments"></div>
+    <div class="top"><span class="brand">PesaLog</span><select id="deviceFilter" aria-label="Phone"><option value="all">All phones</option></select></div>
+    <section class="view on" id="v-home"><div id="home"></div></section>
+    <section class="view" id="v-tx">
+      <div class="search"><input id="q" type="search" placeholder="Search name, number, plan or reference" aria-label="Search"><select id="pp" aria-label="Rows to show"><option>30</option><option selected>60</option><option>100</option><option>200</option></select></div>
+      <div class="tabs" id="tabs" role="group" aria-label="Payment status"></div>
       <div class="tool">
         <button class="btn ghost" id="selAll" type="button">Select all</button>
         <button class="btn ghost" id="selNone" type="button">Clear</button>
@@ -84,11 +101,18 @@ label.f{display:block;font-size:.8rem;color:var(--muted)}
         <span class="status" id="when"></span>
       </div>
       <div id="list"></div>
-    </div>
-    <div id="planView" class="hide">
+    </section>
+    <section class="view" id="v-plans">
       <div class="tool"><button class="btn ghost" id="refresh2" type="button">Refresh</button><span class="status" id="when2"></span></div>
       <div id="plans"></div>
-    </div>
+    </section>
+    <section class="view" id="v-dev"><div class="card" id="devices"></div></section>
+    <section class="view" id="v-more">
+      <div class="card"><h2>Account</h2><div class="status">Signed in. Customer numbers are always masked here.</div><div class="tool" style="margin-top:10px"><button class="btn ghost hide" id="logout" type="button">Log out</button></div></div>
+      <div class="card"><h2>How changes work</h2><div class="status">Retries, airtime checks and plan edits are sent to the phone, which double-checks them. Plan edits and offer forwarding wait for your approval on the phone. Phones sync about every 5 minutes.</div></div>
+      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.06</div></div>
+    </section>
+    <nav class="nav" id="nav" aria-label="Sections"></nav>
   </div>
 </div>
 
@@ -108,10 +132,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_5yKJEABZ51uW7Xa8Qn5gKQ_NVZLbuoc";
 /* ===================================================================== */
 
 const $ = id => document.getElementById(id);
-const TABS = [["failed","Failed"],["unconfirmed","Unconfirmed"],["received","Received"],["pending","Pending"],["completed","Completed"],["verified","Verified"],["unverified","Unverified"]];
+const TABS = [["all","All"],["failed","Failed"],["unconfirmed","Unconfirmed"],["received","Received"],["pending","Pending"],["completed","Completed"],["verified","Verified"],["unverified","Unverified"]];
 const RETRY_OK = ["failed","unconfirmed","received"];
 const TAB_HELP = {unverified:"Customer number could not be found on the phone (hidden by Safaricom). Numbers are always masked here.", verified:"Completed and confirmed by a Safaricom message on the phone.", completed:"Bundle sent. Not every completed payment has a Safaricom confirmation yet."};
-let tab = "failed", view = "pay", rows = [], plansData = [], jobs = {}, cmds = {}, devices = [], selected = new Set(), selectedDevice = "all", timer = null, busy = false, editing = null;
+let tab = "all", page = "home", q = "", perPage = 60, rows = [], plansData = [], jobs = {}, cmds = {}, devices = [], selected = new Set(), selectedDevice = "all", timer = null, busy = false, editing = null;
 /* ---------- session ---------- */
 function getSession(){ try{ return JSON.parse(localStorage.getItem("pl_session")||"null"); }catch(e){ return null; } }
 function saveSession(j){
@@ -156,6 +180,7 @@ const cmdKey = (dev, ref, action) => dkey(dev)+"::"+ref+"::"+action;
 function rowKey(r){ return dkey(r.device_id) + "::" + r.ref; }
 function visibleRows(){ return selectedDevice==="all" ? rows : rows.filter(r => dkey(r.device_id)===selectedDevice); }
 function inTab(r,k){
+  if(k==="all") return true;
   if(k==="verified") return r.status==="completed" && r.verified===true;
   if(k==="unverified") return r.no_number===true;
   return r.status===k;
@@ -191,7 +216,7 @@ function drawDevices(){
   const shown = selectedDevice==="all" ? devices : devices.filter(d => dkey(d.device_id)===selectedDevice);
   shown.forEach(d=>{
     const box=el("div","dev");
-    const fresh=d.last_seen && (Date.now()-new Date(d.last_seen).getTime())<5*60*1000;
+    const fresh=d.last_seen && (Date.now()-new Date(d.last_seen).getTime())<8*60*1000;
     const title=el("div",null,(fresh?"🟢":"🔴")+" "+(d.device_name||"Unnamed phone")+" · "+(fresh?"Online":"Offline")+" · seen "+ago(d.last_seen));
     title.style.fontWeight="700"; box.appendChild(title);
     const bits=[]; if(d.app_version) bits.push("PesaLog "+d.app_version);
@@ -227,14 +252,54 @@ function drawDeviceFilter(){
   sel.value=devices.some(d=>dkey(d.device_id)===old)?old:"all";
   selectedDevice=sel.value;
 }
-function drawViews(){
-  const v=$("views"); v.textContent="";
-  [["pay","Payments"],["plans","Plans"]].forEach(([k,l])=>{
-    const b=el("button","tab",l); b.type="button"; b.setAttribute("aria-pressed",String(view===k));
-    b.onclick=()=>{ view=k; drawViews(); $("payView").classList.toggle("hide",view!=="pay"); $("planView").classList.toggle("hide",view!=="plans"); $("bar").classList.toggle("hide",view!=="pay"); };
-    v.appendChild(b);
+const NAV=[["home","Home"],["tx","Payments"],["plans","Plans"],["dev","Phones"],["more","More"]];
+const IC={home:"M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",tx:"M4 6h16M4 12h16M4 18h10",plans:"M4 7l8-4 8 4v10l-8 4-8-4z",dev:"M8 2h8a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",more:"M5 12h.01M12 12h.01M19 12h.01"};
+function drawNav(){
+  const n=$("nav"); n.textContent="";
+  NAV.forEach(([k,l])=>{
+    const b=document.createElement("button"); b.type="button"; b.setAttribute("aria-current",String(page===k));
+    b.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+IC[k]+'"/></svg><span>'+l+'</span>';
+    b.onclick=()=>show(k); n.appendChild(b);
   });
 }
+function show(k,status){
+  page=k; if(status){ tab=status; selected.clear(); draw(); }
+  NAV.forEach(([v])=>$("v-"+v).classList.toggle("on",v===k));
+  $("bar").classList.toggle("hide",k!=="tx");
+  try{ history.replaceState(null,"","#"+k); }catch(e){}
+  drawNav(); window.scrollTo(0,0);
+}
+const isFresh=d=>d.last_seen&&(Date.now()-new Date(d.last_seen).getTime())<8*60*1000;
+function drawHome(){
+  const h=$("home"); h.textContent="";
+  const cur=visibleRows(), cnt=k=>cur.filter(r=>inTab(r,k)).length;
+  const att=el("div","card"); att.appendChild(el("h2",null,"Needs attention")); let any=false;
+  [["failed","Failed payments","badv"],["unconfirmed","Unconfirmed payments","badv"],["received","Received, not processed yet","warnv"]].forEach(([k,l,c])=>{
+    const n=cnt(k); if(!n) return; any=true;
+    const r=el("button","line"); r.type="button"; r.append(el("span",null,l),el("b",c,String(n))); r.onclick=()=>show("tx",k); att.appendChild(r);
+  });
+  if(!any) att.appendChild(el("div","status","Nothing needs your attention."));
+  h.appendChild(att);
+  const ds=(selectedDevice==="all"?devices:devices.filter(d=>dkey(d.device_id)===selectedDevice)).filter(d=>d.summary);
+  if(ds.length){
+    const c=el("div","card"); c.appendChild(el("h2",null,"Earnings")); const g=el("div","kv");
+    ["","Today","7 days","Month"].forEach(x=>g.appendChild(el("span","h",x)));
+    [["Sales","sales"],["Commission","comm"],["Payments","n"]].forEach(([lbl,f])=>{
+      g.appendChild(el("span","h",lbl));
+      ["today","week","month"].forEach(k=>{ const v=ds.reduce((a,d)=>a+Number(sumOf(d,k)[f]||0),0); g.appendChild(el("b",null,f==="n"?String(v):kes(v))); });
+    });
+    c.appendChild(g); h.appendChild(c);
+  }
+  const p=el("div","card"); p.appendChild(el("h2",null,"Phones"));
+  if(!devices.length) p.appendChild(el("div","status","No phone has reported yet."));
+  devices.forEach(d=>{
+    const r=el("button","line"); r.type="button";
+    r.append(el("span",null,(isFresh(d)?"🟢 ":"🔴 ")+(d.device_name||"Phone")),el("span","status",(d.battery!=null?d.battery+"% · ":"")+(d.airtime!=null?kes(d.airtime):"no airtime yet")));
+    r.onclick=()=>show("dev"); p.appendChild(r);
+  });
+  h.appendChild(p);
+}
+function drawViews(){ drawHome(); drawNav(); }
 
 function draw(){
   const current=visibleRows();
@@ -247,9 +312,9 @@ function draw(){
   });
   const list = $("list"); list.textContent = "";
   if(TAB_HELP[tab]) list.appendChild(el("div","status",TAB_HELP[tab]));
-  const vis = current.filter(r => inTab(r,tab));
+  const vis = current.filter(r => inTab(r,tab)).filter(r => !q || [r.name,r.phone_masked,r.plan,r.ref].join(" ").toLowerCase().includes(q));
   if(!vis.length){ const c = el("div","card"); c.appendChild(el("div","status","Nothing here. 🎉")); list.appendChild(c); }
-  vis.slice(0,300).forEach(r => {
+  vis.slice(0,perPage).forEach(r => {
     const card = el("div","card"), row = el("div","row"), key=rowKey(r);
     const cm = cmds[cmdKey(r.device_id,r.ref,"retry")], active = cm && (cm.status==="queued"||cm.status==="running");
     const canRetry = RETRY_OK.includes(r.status);
@@ -273,7 +338,7 @@ function draw(){
     if(jb && jb.result && dkey(jb.from_device)===dkey(r.device_id)) mid.appendChild(el("div","reason status",devName(jb.to_device)+": "+jb.result));
     row.append(mid,el("div","amt",kes(r.amount))); card.appendChild(row); list.appendChild(card);
   });
-  if(vis.length>300) list.appendChild(el("div","status","Showing the newest 300 of "+vis.length+"."));
+  if(vis.length>perPage) list.appendChild(el("div","status","Showing the newest "+perPage+" of "+vis.length+". Search or raise the row count to see more."));
   count();
 }
 function count(){
@@ -332,8 +397,8 @@ function editForm(p){
     const price=parseFloat($("e_price").value), cost=parseFloat($("e_cost").value), commV=$("e_comm").value.trim(), name=$("e_name").value.trim(), cat=$("e_cat").value.trim();
     if(!name||!cat||!(price>0)||!(cost>=0)){ toast("Check the name, category and prices."); return; }
     const payload={plan_id:p.plan_id,name:name,price:price,cost:cost,commission:commV===""?null:parseFloat(commV),category:cat,enabled:$("e_on").checked,run_on:$("e_run").value};
-    if(!confirm("Send this plan change to "+(p.name||"the plan")+" on the phone?\n\nThe phone checks it again before applying. A wrong price can stop payments from matching this plan."+($("e_run").value?"\n\nPayments for this offer will be handed to "+devName($("e_run").value)+" to run the USSD. The customer's number is passed to that phone through your account and erased from the cloud once it picks it up.":""))) return;
-    if(await sendCmd(p.device_id,"plan_edit",String(p.plan_id),payload,"Plan change sent. The phone applies it within a minute.")){ editing=null; drawPlans(); }
+    if(!confirm("Send this plan change to "+(p.name||"the plan")+" on the phone?\n\nThe phone will ask for approval first: open PesaLog > Settings > Portal sync on that phone and tap Approve within 30 minutes. A wrong price can stop payments from matching this plan."+($("e_run").value?"\n\nPayments for this offer will be handed to "+devName($("e_run").value)+" to run the USSD. The customer's number is passed to that phone through your account and erased from the cloud once it picks it up.":""))) return;
+    if(await sendCmd(p.device_id,"plan_edit",String(p.plan_id),payload,"Sent. Approve it on the phone (notification or Settings > Portal sync).")){ editing=null; drawPlans(); }
   };
   b.append(save,cancel); f.appendChild(b); return f;
 }
@@ -354,8 +419,10 @@ $("selAll").onclick = () => {
   draw();
 };
 $("selNone").onclick = () => { selected.clear(); draw(); };
-$("deviceFilter").onchange = e => { selectedDevice=e.target.value; selected.clear(); editing=null; drawDevices(); draw(); drawPlans(); };
+$("deviceFilter").onchange = e => { selectedDevice=e.target.value; selected.clear(); editing=null; drawDevices(); draw(); drawPlans(); drawHome(); };
 $("refresh").onclick = () => load();
+$("q").oninput = e => { q = e.target.value.trim().toLowerCase(); draw(); };
+$("pp").onchange = e => { perPage = parseInt(e.target.value,10)||60; draw(); };
 $("refresh2").onclick = () => load();
 $("retry").onclick = async () => {
   const keys = [...selected]; if(!keys.length) return;
@@ -377,7 +444,7 @@ $("retry").onclick = async () => {
 };
 
 /* ---------- login ---------- */
-function showApp(){ $("login").classList.add("hide"); $("app").classList.remove("hide"); $("bar").classList.remove("hide"); $("logout").classList.remove("hide");
+function showApp(){ $("login").classList.add("hide"); $("app").classList.remove("hide"); show(page); $("logout").classList.remove("hide");
   load(); clearInterval(timer); timer = setInterval(() => { if(!document.hidden) load(); }, 15000); }
 function showLogin(){ clearInterval(timer); $("app").classList.add("hide"); $("bar").classList.add("hide"); $("logout").classList.add("hide"); $("login").classList.remove("hide"); }
 $("go").onclick = async () => {
@@ -392,6 +459,8 @@ $("pass").addEventListener("keydown", e => { if(e.key==="Enter") $("go").click()
 $("logout").onclick = () => { localStorage.removeItem("pl_session"); selected.clear(); showLogin(); };
 document.addEventListener("visibilitychange", () => { if(!document.hidden && getSession()) load(); });
 if(getSession()) showApp(); else showLogin();
+
+const h0=location.hash.slice(1); show(NAV.some(n=>n[0]===h0)?h0:"home");
 </script>
 </body>
 </html>
