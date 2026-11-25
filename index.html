@@ -124,10 +124,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <section class="view" id="v-dev"><div class="card" id="devices"></div></section>
     <section class="view" id="v-more">
       <div class="card"><h2>Account</h2><div class="status">Signed in. Customer numbers are always masked here.</div><div class="tool" style="margin-top:10px"><button class="btn ghost hide" id="logout" type="button">Log out</button></div></div>
-      <div class="card"><h2>Alert settings</h2><div class="status">Alerts show on Home and as a bar on every page. These limits are saved in this browser.</div>
-        <div class="set"><label class="f" for="a_off">Phone offline after (minutes)</label><input class="f" id="a_off" type="number" min="2" step="1" inputmode="numeric">
+      <div class="card"><h2>Alert settings</h2><div class="status">Alerts show on Home and as a bar on every page. These limits are saved in this browser. The automatic airtime check asks each online phone to read its airtime and only runs while this portal is open.</div>
+        <div class="set"><label class="f" for="a_auto">Auto airtime check every (minutes, 0 = off)</label><input class="f" id="a_auto" type="number" min="0" step="1" inputmode="numeric">
+        <label class="f" for="a_off">Phone offline after (minutes)</label><input class="f" id="a_off" type="number" min="2" step="1" inputmode="numeric">
         <label class="f" for="a_air">Low airtime below (KES)</label><input class="f" id="a_air" type="number" min="0" step="any" inputmode="decimal">
         <label class="f" for="a_stuck">Payment stuck as Received after (minutes)</label><input class="f" id="a_stuck" type="number" min="1" step="1" inputmode="numeric">
+        <label class="f" for="a_unv">Completed but unverified after (minutes)</label><input class="f" id="a_unv" type="number" min="5" step="1" inputmode="numeric">
         <label class="f" for="a_bat">Low battery at or below (%)</label><input class="f" id="a_bat" type="number" min="1" max="100" step="1" inputmode="numeric"></div>
         <label class="chk"><input type="checkbox" id="a_notify"> Browser notification for new alerts</label>
         <label class="chk"><input type="checkbox" id="a_sound"> Beep for new serious alerts</label>
@@ -136,7 +138,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
         <div class="btns"><button class="btn small" id="bkCsv" type="button">Payments (CSV)</button><button class="btn small ghost" id="bkJson" type="button">Full backup (JSON)</button></div>
         <div class="status" id="backupInfo" style="margin-top:8px"></div></div>
       <div class="card"><h2>How changes work</h2><div class="status">Retries, airtime checks and plan edits are sent to the phone, which double-checks them. Plan edits and offer forwarding wait for your approval on the phone. Phones sync about every 5 minutes.</div></div>
-      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.09</div></div>
+      <div class="card"><h2>About</h2><div class="status">PesaLog Cloud portal V9.10</div></div>
     </section>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
   </div>
@@ -160,7 +162,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_5yKJEABZ51uW7Xa8Qn5gKQ_NVZLbuoc";
 const $ = id => document.getElementById(id);
 const TABS = [["all","All"],["failed","Failed"],["unconfirmed","Unconfirmed"],["received","Received"],["pending","Pending"],["completed","Completed"],["verified","Verified"],["unverified","Unverified"]];
 const RETRY_OK = ["failed","unconfirmed","received"];
-const TAB_HELP = {unverified:"Customer number could not be found on the phone (hidden by Safaricom). Numbers are always masked here.", verified:"Completed and confirmed by a Safaricom message on the phone.", completed:"Bundle sent. Not every completed payment has a Safaricom confirmation yet."};
+const TAB_HELP = {unverified:"Bundle sent, but no Safaricom confirmation message found yet. Only a concern if it stays here for a long time. Payments with a hidden customer number are not listed here.", verified:"Completed and confirmed by a Safaricom message on the phone.", completed:"Bundle sent. Not every completed payment has a Safaricom confirmation yet."};
 let tab = "all", page = "home", q = "", perPage = 60, rows = [], plansData = [], jobs = {}, cmds = {}, devices = [], selected = new Set(), selectedDevice = "all", timer = null, busy = false, editing = null;
 /* ---------- session ---------- */
 function getSession(){ try{ return JSON.parse(localStorage.getItem("pl_session")||"null"); }catch(e){ return null; } }
@@ -208,7 +210,7 @@ function visibleRows(){ return selectedDevice==="all" ? rows : rows.filter(r => 
 function inTab(r,k){
   if(k==="all") return true;
   if(k==="verified") return r.status==="completed" && r.verified===true;
-  if(k==="unverified") return r.no_number===true;
+  if(k==="unverified") return r.status==="completed" && r.verified!==true && r.no_number!==true;
   return r.status===k;
 }
 async function load(){
@@ -228,7 +230,7 @@ async function load(){
     if(selectedDevice!=="all" && !devices.some(d => dkey(d.device_id)===selectedDevice)) selectedDevice="all";
     const valid = new Set(rows.map(rowKey));
     selected.forEach(k => { if(!valid.has(k)) selected.delete(k); });
-    refreshAlerts(); drawDevices(); drawDeviceFilter(); drawViews(); draw(); drawSummary(); drawBackupInfo(); notifyNew(); if(!editing) drawPlans();
+    refreshAlerts(); drawDevices(); drawDeviceFilter(); drawViews(); draw(); drawSummary(); drawBackupInfo(); notifyNew(); autoAirtime(); if(!editing) drawPlans();
     const t = "Updated " + new Date().toLocaleTimeString(); $("when").textContent = t; $("when2").textContent = t;
   }catch(e){
     if(e.message==="login"){ showLogin(); } else { toast(e.message); }
@@ -363,7 +365,7 @@ function draw(){
     mid.appendChild(el("div","sub", deviceName+" · "+(r.phone_masked||"number hidden")+" · "+ago(r.paid_at)+(r.plan?" · "+r.plan:"")));
     const chips = el("div","reason"); chips.appendChild(el("span","chip "+r.status, r.status));
     if(r.verified) chips.appendChild(el("span","chip verified","verified"));
-    if(r.no_number) chips.appendChild(el("span","chip unverified","number unknown"));
+    if(r.no_number) chips.appendChild(el("span","chip","number unknown"));
     const jb=jobs[r.ref]; if(jb && dkey(jb.from_device)===dkey(r.device_id)) chips.appendChild(el("span","chip "+(jb.status==="failed"?"cmdbad":"cmd"),"USSD on "+devName(jb.to_device)+": "+jb.status));
     if(cm){ const bad=cm.status==="failed"; chips.appendChild(el("span","chip "+(bad?"cmdbad":"cmd"),cm.status==="queued"?"waiting for phone":cm.status==="running"?"running":cm.status==="done"?"retried":"retry failed")); }
     mid.appendChild(chips);
@@ -492,7 +494,7 @@ $("retry").onclick = async () => {
 };
 
 /* ---------- V9.09: alerts, daily summary, backup ---------- */
-const CFG_DEF={off:10,air:100,stuck:10,bat:15,notify:false,sound:false};
+const CFG_DEF={auto:30,off:10,air:100,stuck:10,unv:60,bat:15,notify:false,sound:false};
 let cfg=Object.assign({},CFG_DEF); try{ Object.assign(cfg,JSON.parse(localStorage.getItem("pl_alert_cfg")||"{}")); }catch(e){}
 let curAlerts=[], seen=null, sumRange="today", sumCache=null;
 const DAY=864e5;
@@ -509,10 +511,12 @@ function computeAlerts(){
   });
   const sum=a=>a.reduce((s,r)=>s+Number(r.amount||0),0), oldest=a=>ago(a.map(r=>r.paid_at).filter(Boolean).sort()[0]);
   const f=rows.filter(r=>r.status==="failed"), u=rows.filter(r=>r.status==="unconfirmed");
-  const st=rows.filter(r=>r.status==="received"&&r.paid_at&&now-new Date(r.paid_at).getTime()>cfg.stuck*60000);
+  const st=rows.filter(r=>r.status==="received"&&!r.no_number&&r.paid_at&&now-new Date(r.paid_at).getTime()>cfg.stuck*60000);
   if(f.length) out.push({k:"failed:"+f.length,lv:"bad",t:"❌ "+f.length+" failed payment"+(f.length>1?"s":"")+" ("+kes(sum(f))+"). Oldest "+oldest(f)+".",go:"tx",tab:"failed"});
   if(u.length) out.push({k:"unconf:"+u.length,lv:"bad",t:"❓ "+u.length+" unconfirmed payment"+(u.length>1?"s":"")+" ("+kes(sum(u))+"). Oldest "+oldest(u)+".",go:"tx",tab:"unconfirmed"});
   if(st.length) out.push({k:"stuck:"+st.length,lv:"warn",t:"⏳ "+st.length+" payment"+(st.length>1?"s":"")+" received but not processed for over "+cfg.stuck+" min ("+kes(sum(st))+").",go:"tx",tab:"received"});
+  const uv=rows.filter(r=>{ if(r.status!=="completed"||r.verified===true||r.no_number===true||!r.paid_at) return false; const a=now-new Date(r.paid_at).getTime(); return a>cfg.unv*60000&&a<DAY; });
+  if(uv.length) out.push({k:"unv:"+uv.length,lv:"bad",t:"🔎 "+uv.length+" payment"+(uv.length>1?"s":"")+" still unverified after "+cfg.unv+" min ("+kes(sum(uv))+"). Oldest "+oldest(uv)+".",go:"tx",tab:"unverified"});
   const rf=Object.values(cmds).filter(c=>c.action==="retry"&&c.status==="failed").length;
   if(rf) out.push({k:"retryfail:"+rf,lv:"warn",t:"🔁 "+rf+" retry request"+(rf>1?"s":"")+" failed on the phone in the last 6 hours.",go:"tx",tab:"failed"});
   let lb=0; try{ lb=Number(localStorage.getItem("pl_last_backup")||0); }catch(e){}
@@ -546,17 +550,39 @@ function notifyNew(){
 }
 function refreshAlerts(){ curAlerts=computeAlerts(); drawAlertBar(); }
 
+/* ----- automatic airtime check ----- */
+let autoBusy=false;
+async function autoAirtime(){
+  if(!cfg.auto||autoBusy||!devices.length) return; autoBusy=true;
+  try{
+    const now=Date.now(), due=cfg.auto*60000; let sent=0;
+    for(const d of devices){
+      if(!isFresh(d)) continue;
+      const id=dkey(d.device_id), c=cmds[cmdKey(d.device_id,"airtime","airtime")];
+      if(c&&(c.status==="queued"||c.status==="running")) continue;
+      const lastRead=d.airtime_at?new Date(d.airtime_at).getTime():0; let lastReq=0;
+      try{ lastReq=Number(localStorage.getItem("pl_air_req_"+id)||0); }catch(e){}
+      if(now-lastRead<due||now-lastReq<due) continue;
+      try{ await api("commands",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({ref:"airtime",device_id:id,action:"airtime"})}); sent++; }
+      catch(e){ if(e.message==="login") throw e; if(e.code!=="23505") continue; }
+      try{ localStorage.setItem("pl_air_req_"+id,String(now)); }catch(e){}
+    }
+    if(sent) setTimeout(()=>{ load(); },20000);
+  }catch(e){ if(e.message==="login") showLogin(); }
+  finally{ autoBusy=false; }
+}
+
 /* ----- alert settings ----- */
 function initCfgUI(){
-  $("a_off").value=cfg.off; $("a_air").value=cfg.air; $("a_stuck").value=cfg.stuck; $("a_bat").value=cfg.bat;
+  $("a_auto").value=cfg.auto; $("a_off").value=cfg.off; $("a_air").value=cfg.air; $("a_stuck").value=cfg.stuck; $("a_unv").value=cfg.unv; $("a_bat").value=cfg.bat;
   $("a_notify").checked=!!cfg.notify; $("a_sound").checked=!!cfg.sound;
 }
 function readNum(id,def,min){ const v=parseFloat($(id).value); return (isFinite(v)&&v>=min)?v:def; }
 function onCfgChange(){
-  cfg.off=readNum("a_off",CFG_DEF.off,2); cfg.air=readNum("a_air",CFG_DEF.air,0); cfg.stuck=readNum("a_stuck",CFG_DEF.stuck,1); cfg.bat=readNum("a_bat",CFG_DEF.bat,1);
+  cfg.auto=readNum("a_auto",CFG_DEF.auto,0); if(cfg.auto>0&&cfg.auto<10) cfg.auto=10; cfg.off=readNum("a_off",CFG_DEF.off,2); cfg.air=readNum("a_air",CFG_DEF.air,0); cfg.stuck=readNum("a_stuck",CFG_DEF.stuck,1); cfg.unv=readNum("a_unv",CFG_DEF.unv,5); cfg.bat=readNum("a_bat",CFG_DEF.bat,1);
   saveCfgStore(); initCfgUI(); refreshAlerts(); drawHome(); drawDevices(); toast("Alert settings saved.");
 }
-["a_off","a_air","a_stuck","a_bat"].forEach(id=>{ $(id).onchange=onCfgChange; });
+["a_auto","a_off","a_air","a_stuck","a_unv","a_bat"].forEach(id=>{ $(id).onchange=onCfgChange; });
 $("a_sound").onchange=e=>{ cfg.sound=e.target.checked; saveCfgStore(); if(cfg.sound) beep(); };
 $("a_notify").onchange=async e=>{
   if(!e.target.checked){ cfg.notify=false; saveCfgStore(); return; }
@@ -598,7 +624,7 @@ function computeSummary(){
         S.unm.n++; S.unm.sales+=amt;
         const pk=r.plan||"(no plan)", pp=S.byPlan[pk]||(S.byPlan[pk]={name:pk,n:0,sales:0,profit:0,unknown:true}); pp.n++; pp.sales+=amt;
       }
-    } else if(r.status==="failed"||r.status==="unconfirmed"||r.status==="received"){
+    } else if(r.status==="failed"||r.status==="unconfirmed"||(r.status==="received"&&!r.no_number)){
       S.risk.n++; S.risk.amt+=amt; if(r.status==="failed") S.risk.failed++; else if(r.status==="unconfirmed") S.risk.unconf++; else S.risk.recv++;
     }
   });
